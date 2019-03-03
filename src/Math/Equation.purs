@@ -61,8 +61,6 @@ data NumberEquation
   | Constant NumberConstant
 
 derive instance genericNumberEquation :: Generic NumberEquation _
--- instance eqNumberEquation :: Eq NumberEquation where
---   eq = genericEq
 instance eqNumberEquation :: Eq NumberEquation where
   eq a b = case Tuple a b of
     Tuple (ACos x) (ACos y) -> eq x y
@@ -84,6 +82,8 @@ instance eqNumberEquation :: Eq NumberEquation where
     Tuple (Equation x) (Equation y) -> eq x y
     Tuple (Constant x) (Constant y) -> eq x y
     _ -> false
+instance showNumberEquation :: Show NumberEquation where
+  show = genericShow
 
 
 
