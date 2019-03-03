@@ -3,8 +3,8 @@
 
 module Math.Equation
   ( VarName, BoundVars, emptyVars, bindVars, bindVar, BoundError (..)
-  , NumberConstant (..), NumberEquation (..), Equation (..)
-  , computeConstant, computeNumber, compute
+  , NumberConstant (..), NumberValue (..), Value (..)
+  , computeConstant, computeNumberValue, computeValue
   ) where
 
 import Prelude
@@ -124,28 +124,28 @@ instance coarbitraryNumberConstant :: Coarbitrary NumberConstant where
   coarbitrary x = coarbitrary (from x) -- genericCoarbitrary
 
 
-data NumberEquation
-  = ACos NumberEquation
-  | ASin NumberEquation
-  | ATan NumberEquation
-  | ATan2 NumberEquation NumberEquation
-  | Cos NumberEquation
-  | Sin NumberEquation
-  | Tan NumberEquation
-  | Ceil NumberEquation -- ^ Round-up
-  | Floor NumberEquation -- ^ Round-down
-  | Round NumberEquation -- ^ Round-middle
-  | Trunc NumberEquation -- ^ `if x > 0 then floor(x) else ceil(x)`
-  | Exp NumberEquation -- ^ `e^x`
-  | Log NumberEquation -- ^ `log_e(x)`, natural logarithm
-  | Pow NumberEquation NumberEquation -- ^ `x^y`
-  | Sqrt NumberEquation
-  | Remainder NumberEquation NumberEquation
-  | Equation (Equation Number)
+data NumberValue
+  = ACos NumberValue
+  | ASin NumberValue
+  | ATan NumberValue
+  | ATan2 NumberValue NumberValue
+  | Cos NumberValue
+  | Sin NumberValue
+  | Tan NumberValue
+  | Ceil NumberValue -- ^ Round-up
+  | Floor NumberValue -- ^ Round-down
+  | Round NumberValue -- ^ Round-middle
+  | Trunc NumberValue -- ^ `if x > 0 then floor(x) else ceil(x)`
+  | Exp NumberValue -- ^ `e^x`
+  | Log NumberValue -- ^ `log_e(x)`, natural logarithm
+  | Pow NumberValue NumberValue -- ^ `x^y`
+  | Sqrt NumberValue
+  | Remainder NumberValue NumberValue
+  | Value (Value Number)
   | Constant NumberConstant
 
-derive instance genericNumberEquation :: Generic NumberEquation _
-instance eqNumberEquation :: Eq NumberEquation where
+derive instance genericNumberValue :: Generic NumberValue _
+instance eqNumberValue :: Eq NumberValue where
   eq a b = case Tuple a b of
     Tuple (ACos x) (ACos y) -> eq x y
     Tuple (ASin x) (ASin y) -> eq x y
@@ -163,10 +163,10 @@ instance eqNumberEquation :: Eq NumberEquation where
     Tuple (Pow x x') (Pow y y') -> eq x y && eq x' y'
     Tuple (Sqrt x) (Sqrt y) -> eq x y
     Tuple (Remainder x x') (Remainder y y') -> eq x y && eq x' y'
-    Tuple (Equation x) (Equation y) -> eq x y
+    Tuple (Value x) (Value y) -> eq x y
     Tuple (Constant x) (Constant y) -> eq x y
     _ -> false
-instance showNumberEquation :: Show NumberEquation where
+instance showNumberValue :: Show NumberValue where
   show a = case a of
     ACos x -> "ACos (" <> show x <> ")"
     ASin x -> "ASin (" <> show x <> ")"
@@ -184,9 +184,9 @@ instance showNumberEquation :: Show NumberEquation where
     Pow x y -> "Pow (" <> show x <> ") (" <> show y <> ")"
     Sqrt x -> "Sqrt (" <> show x <> ")"
     Remainder x y -> "Remainder (" <> show x <> ") (" <> show y <> ")"
-    Equation x -> "Equation (" <> show x <> ")"
+    Value x -> "Value (" <> show x <> ")"
     Constant x -> "Constant (" <> show x <> ")"
-instance encodeJsonNumberEquation :: EncodeJson NumberEquation where
+instance encodeJsonNumberValue :: EncodeJson NumberValue where
   encodeJson a = case a of
     ACos x -> "acos" := x ~> jsonEmptyObject
     ASin x -> "asin" := x ~> jsonEmptyObject
@@ -204,9 +204,9 @@ instance encodeJsonNumberEquation :: EncodeJson NumberEquation where
     Pow x y -> "pow" := (Tuple x y) ~> jsonEmptyObject
     Sqrt x -> "sqrt" := x ~> jsonEmptyObject
     Remainder x y -> "rem" := (Tuple x y) ~> jsonEmptyObject
-    Equation x -> "equ" := x ~> jsonEmptyObject
+    Value x -> "equ" := x ~> jsonEmptyObject
     Constant x -> "con" := x ~> jsonEmptyObject
-instance decodeJsonNumberEquation :: DecodeJson NumberEquation where
+instance decodeJsonNumberValue :: DecodeJson NumberValue where
   decodeJson json = do
     o <- decodeJson json
     let acos' = ACos <$> o .: "acos"
@@ -225,7 +225,7 @@ instance decodeJsonNumberEquation :: DecodeJson NumberEquation where
         pow' = (\(Tuple x y) -> Pow x y) <$> o .: "pow"
         sqrt' = Sqrt <$> o .: "sqrt"
         remainder' = (\(Tuple x y) -> Remainder x y) <$> o .: "rem"
-        equation' = Equation <$> o .: "equ"
+        value' = Value <$> o .: "equ"
         constant' = Constant <$> o .: "con"
     acos'
       <|> asin'
@@ -243,13 +243,13 @@ instance decodeJsonNumberEquation :: DecodeJson NumberEquation where
       <|> pow'
       <|> sqrt'
       <|> remainder'
-      <|> equation'
+      <|> value'
       <|> constant'
-instance arbitraryNumberEquation :: Arbitrary NumberEquation where
+instance arbitraryNumberValue :: Arbitrary NumberValue where
   arbitrary = sized \s -> tailRecM go (Tuple identity s)
     where
-      go :: Tuple (NumberEquation -> NumberEquation) Int
-         -> Gen (Step (Tuple (NumberEquation -> NumberEquation) Int) NumberEquation)
+      go :: Tuple (NumberValue -> NumberValue) Int
+         -> Gen (Step (Tuple (NumberValue -> NumberValue) Int) NumberValue)
       go (Tuple wrap n)
         | n <= 1 = (\c -> Done (wrap (Constant c))) <$> arbitrary
         | otherwise = do
@@ -269,7 +269,7 @@ instance arbitraryNumberEquation :: Arbitrary NumberEquation where
                   , Pow <$> (Constant <$> arbitrary)
                   , pure Sqrt
                   , Remainder <$> (Constant <$> arbitrary)
-                  -- , pure Equation
+                  -- , pure Value
                   ]
             in  oneOf x
           pure (Loop (Tuple chosenF (n - 1)))
@@ -277,24 +277,24 @@ instance arbitraryNumberEquation :: Arbitrary NumberEquation where
 
 
 
-data Equation a
+data Value a
   = Lit a -- ^ Numeric literal
   | Var VarName -- ^ Use a free variable
-  | Add (Equation a) (Equation a)
-  | Sub (Equation a) (Equation a)
-  | Negate (Equation a)
-  | Mul (Equation a) (Equation a)
-  | Div (Equation a) (Equation a)
-  | Recip (Equation a) -- ^ Reciporical
-  | GCD (Equation a) (Equation a)
-  | LCM (Equation a) (Equation a)
-  | Abs (Equation a) -- ^ Absolute Value
-  | Max (Equation a) (Equation a)
-  | Min (Equation a) (Equation a)
-  | Modulo (Equation a) (Equation a)
+  | Add (Value a) (Value a)
+  | Sub (Value a) (Value a)
+  | Negate (Value a)
+  | Mul (Value a) (Value a)
+  | Div (Value a) (Value a)
+  | Recip (Value a) -- ^ Reciporical
+  | GCD (Value a) (Value a)
+  | LCM (Value a) (Value a)
+  | Abs (Value a) -- ^ Absolute Value
+  | Max (Value a) (Value a)
+  | Min (Value a) (Value a)
+  | Modulo (Value a) (Value a)
 
-derive instance genericEquation :: Generic (Equation a) _
-instance eqEquation :: Eq a => Eq (Equation a) where
+derive instance genericValue :: Generic (Value a) _
+instance eqValue :: Eq a => Eq (Value a) where
   eq a b = case Tuple a b of
     Tuple (Lit x) (Lit y) -> eq x y
     Tuple (Var x) (Var y) -> eq x y
@@ -311,7 +311,7 @@ instance eqEquation :: Eq a => Eq (Equation a) where
     Tuple (Min x x') (Min y y') -> eq x y && eq x' y'
     Tuple (Modulo x x') (Modulo y y') -> eq x y && eq x' y'
     _ -> false
-instance showEquation :: Show a => Show (Equation a) where
+instance showValue :: Show a => Show (Value a) where
   show a = case a of
     Lit x -> "Lit (" <> show x <> ")"
     Var x -> "Var (" <> show x <> ")"
@@ -327,7 +327,7 @@ instance showEquation :: Show a => Show (Equation a) where
     Max x y -> "Max (" <> show x <> ") (" <> show y <> ")"
     Min x y -> "Min (" <> show x <> ") (" <> show y <> ")"
     Modulo x y -> "Modulo (" <> show x <> ") (" <> show y <> ")"
-instance functorEquation :: Functor Equation where
+instance functorValue :: Functor Value where
   map f a = case a of
     Lit x -> Lit (f x)
     Var n -> Var n
@@ -343,7 +343,7 @@ instance functorEquation :: Functor Equation where
     Max x y -> Max (map f x) (map f y)
     Min x y -> Min (map f x) (map f y)
     Modulo x y -> Modulo (map f x) (map f y)
-instance encodeJsonEquation :: EncodeJson a => EncodeJson (Equation a) where
+instance encodeJsonValue :: EncodeJson a => EncodeJson (Value a) where
   encodeJson a = case a of
     Lit x -> "lit" := x ~> jsonEmptyObject
     Var n -> "var" := n ~> jsonEmptyObject
@@ -359,7 +359,7 @@ instance encodeJsonEquation :: EncodeJson a => EncodeJson (Equation a) where
     Max x y -> "max" := (Tuple x y) ~> jsonEmptyObject
     Min x y -> "min" := (Tuple x y) ~> jsonEmptyObject
     Modulo x y -> "mod" := (Tuple x y) ~> jsonEmptyObject
-instance decodeJsonEquation :: DecodeJson a => DecodeJson (Equation a) where
+instance decodeJsonValue :: DecodeJson a => DecodeJson (Value a) where
   decodeJson json = do
     o <- decodeJson json
     let lit = Lit <$> o .: "lit"
@@ -390,15 +390,15 @@ instance decodeJsonEquation :: DecodeJson a => DecodeJson (Equation a) where
       <|> max'
       <|> min'
       <|> mod'
-instance arbitraryEquation :: Arbitrary a => Arbitrary (Equation a) where
+instance arbitraryValue :: Arbitrary a => Arbitrary (Value a) where
   arbitrary = sized \s -> tailRecM go (Tuple identity s)
     where
-      small :: Gen (Equation a)
+      small :: Gen (Value a)
       small =
         let q = NonEmpty (Lit <$> arbitrary) [Var <$> arbitrary]
         in  oneOf q
-      go :: Tuple (Equation a -> Equation a) Int
-         -> Gen (Step (Tuple (Equation a -> Equation a) Int) (Equation a))
+      go :: Tuple (Value a -> Value a) Int
+         -> Gen (Step (Tuple (Value a -> Value a) Int) (Value a))
       go (Tuple wrap n)
         | n <= 1 = (\c -> Done (wrap c)) <$> small
         | otherwise = do
@@ -453,48 +453,48 @@ computeConstant x = case x of
   Sqrt2 -> sqrt2
 
 
-computeNumber :: NumberEquation -> BoundVars Number -> Either BoundError Number
-computeNumber eq nss@(BoundVars ns) = case eq of
-  ACos x -> acos <$> computeNumber x nss
-  ASin x -> asin <$> computeNumber x nss
-  ATan x -> atan <$> computeNumber x nss
-  ATan2 x y -> atan2 <$> computeNumber x nss <*> computeNumber y nss
-  Cos x -> cos <$> computeNumber x nss
-  Sin x -> sin <$> computeNumber x nss
-  Tan x -> tan <$> computeNumber x nss
-  Ceil x -> ceil <$> computeNumber x nss
-  Floor x -> floor <$> computeNumber x nss
-  Round x -> round <$> computeNumber x nss
-  Trunc x -> trunc <$> computeNumber x nss
-  Exp x -> exp <$> computeNumber x nss
-  Log x -> log <$> computeNumber x nss
-  Pow x y -> pow <$> computeNumber x nss <*> computeNumber y nss
-  Sqrt x -> sqrt <$> computeNumber x nss
-  Remainder x y -> remainder <$> computeNumber x nss <*> computeNumber y nss
-  Equation eq' -> compute eq' nss
+computeNumberValue :: NumberValue -> BoundVars Number -> Either BoundError Number
+computeNumberValue v nss@(BoundVars ns) = case v of
+  ACos x -> acos <$> computeNumberValue x nss
+  ASin x -> asin <$> computeNumberValue x nss
+  ATan x -> atan <$> computeNumberValue x nss
+  ATan2 x y -> atan2 <$> computeNumberValue x nss <*> computeNumberValue y nss
+  Cos x -> cos <$> computeNumberValue x nss
+  Sin x -> sin <$> computeNumberValue x nss
+  Tan x -> tan <$> computeNumberValue x nss
+  Ceil x -> ceil <$> computeNumberValue x nss
+  Floor x -> floor <$> computeNumberValue x nss
+  Round x -> round <$> computeNumberValue x nss
+  Trunc x -> trunc <$> computeNumberValue x nss
+  Exp x -> exp <$> computeNumberValue x nss
+  Log x -> log <$> computeNumberValue x nss
+  Pow x y -> pow <$> computeNumberValue x nss <*> computeNumberValue y nss
+  Sqrt x -> sqrt <$> computeNumberValue x nss
+  Remainder x y -> remainder <$> computeNumberValue x nss <*> computeNumberValue y nss
+  Value v' -> computeValue v' nss
   Constant x -> Right (computeConstant x)
 
 
-compute :: forall a
-         . EuclideanRing a
-        => DivisionRing a
-        => Eq a
-        => Ord a
-        => Equation a -> BoundVars a -> Either BoundError a
-compute eq nss@(BoundVars ns) = case eq of
+computeValue :: forall a
+              . EuclideanRing a
+             => DivisionRing a
+             => Eq a
+             => Ord a
+             => Value a -> BoundVars a -> Either BoundError a
+computeValue eq nss@(BoundVars ns) = case eq of
   Lit v -> Right v
   Var n -> case O.lookup n ns of
     Nothing -> Left (UnboundVariable n)
     Just v -> Right v
-  Add x y -> (+) <$> compute x nss <*> compute y nss
-  Sub x y -> (-) <$> compute x nss <*> compute y nss
-  Negate x -> negate <$> compute x nss
-  Mul x y -> (*) <$> compute x nss <*> compute y nss
-  Div x y -> (/) <$> compute x nss <*> compute y nss
-  Recip x -> recip <$> compute x nss
-  GCD x y -> gcd <$> compute x nss <*> compute y nss
-  LCM x y -> lcm <$> compute x nss <*> compute y nss
-  Abs x -> abs <$> compute x nss
-  Max x y -> max <$> compute x nss <*> compute y nss
-  Min x y -> min <$> compute x nss <*> compute y nss
-  Modulo x y -> mod <$> compute x nss <*> compute y nss
+  Add x y -> (+) <$> computeValue x nss <*> computeValue y nss
+  Sub x y -> (-) <$> computeValue x nss <*> computeValue y nss
+  Negate x -> negate <$> computeValue x nss
+  Mul x y -> (*) <$> computeValue x nss <*> computeValue y nss
+  Div x y -> (/) <$> computeValue x nss <*> computeValue y nss
+  Recip x -> recip <$> computeValue x nss
+  GCD x y -> gcd <$> computeValue x nss <*> computeValue y nss
+  LCM x y -> lcm <$> computeValue x nss <*> computeValue y nss
+  Abs x -> abs <$> computeValue x nss
+  Max x y -> max <$> computeValue x nss <*> computeValue y nss
+  Min x y -> min <$> computeValue x nss <*> computeValue y nss
+  Modulo x y -> mod <$> computeValue x nss <*> computeValue y nss

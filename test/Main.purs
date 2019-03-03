@@ -22,10 +22,10 @@ main = do
   log "Json encodings"
   log "  NumberConstant"
   quickCheck' 1000 (jsonIso :: NumberConstant -> Result)
-  log "  Equation"
-  quickCheck' 1000 (jsonIso :: Equation Number -> Result)
-  log "  NumberEquation"
-  quickCheck' 1000 (jsonIso :: NumberEquation -> Result)
+  log "  Value"
+  quickCheck' 1000 (jsonIso :: Value Number -> Result)
+  log "  NumberValue"
+  quickCheck' 1000 (jsonIso :: NumberValue -> Result)
   log "ArrayBuffer encodings"
   log "  NumberConstant"
   quickCheck' 1000 (arrayBufferIso :: NumberConstant -> Result)
