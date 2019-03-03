@@ -24,10 +24,14 @@ import Data.Generic.Rep.Eq (genericEq)
 import Data.Generic.Rep.Show (genericShow)
 import Data.Argonaut
   (class EncodeJson, class DecodeJson, encodeJson, decodeJson, (~>), (:=), jsonEmptyObject, (.:))
+import Data.ArrayBuffer.Class
+  (class EncodeArrayBuffer, class DecodeArrayBuffer, class DynamicByteLength, putArrayBuffer, readArrayBuffer, Uint8 (..))
+import Data.UInt (toInt, fromInt) as UInt
 import Control.Alternative ((<|>))
 import Control.Monad.Rec.Class (tailRecM, Step (..))
 import Foreign.Object (Object)
 import Foreign.Object (fromFoldable, insert, lookup) as O
+import Effect.Exception (throw)
 import Math
   ( acos, asin, atan, atan2, cos, sin, tan, ceil, floor, round, trunc, exp
   , log, pow, sqrt, remainder, e, pi, tau, ln2, ln10, log2e, log10e, sqrt1_2, sqrt2)
@@ -81,6 +85,39 @@ instance decodeJsonNumberConstant :: DecodeJson NumberConstant where
         | eq s "sqrt1_2" -> Right Sqrt1_2
         | eq s "sqrt2" -> Right Sqrt2
         | otherwise -> Left "Not a NumberConstant"
+instance dynamicByteLengthNumberConstant :: DynamicByteLength NumberConstant where
+  byteLength _ = pure 1
+instance encodeArrayBufferNumberConstant :: EncodeArrayBuffer NumberConstant where
+  putArrayBuffer b o x = putArrayBuffer b o y
+    where
+      y = Uint8 z
+      z = UInt.fromInt q
+      q = case x of
+            E -> 0
+            Ln2 -> 1
+            Ln10 -> 2
+            Log2E -> 3
+            Log10E -> 4
+            Pi -> 5
+            Tau -> 6
+            Sqrt1_2 -> 7
+            Sqrt2 -> 8
+instance decodeArrayBufferNumberConstant :: DecodeArrayBuffer NumberConstant where
+  readArrayBuffer b o = do
+    mX <- readArrayBuffer b o
+    case mX of
+      Just (Uint8 w) -> case UInt.toInt w of
+        q | eq q 0 -> pure (Just E)
+          | eq q 1 -> pure (Just Ln2)
+          | eq q 2 -> pure (Just Ln10)
+          | eq q 3 -> pure (Just Log2E)
+          | eq q 4 -> pure (Just Log10E)
+          | eq q 5 -> pure (Just Pi)
+          | eq q 6 -> pure (Just Tau)
+          | eq q 7 -> pure (Just Sqrt1_2)
+          | eq q 8 -> pure (Just Sqrt2)
+          | otherwise -> throw "Not a NumberConstant"
+      Nothing -> pure Nothing
 instance arbitraryNumberConstant :: Arbitrary NumberConstant where
   arbitrary = genericArbitrary
 instance coarbitraryNumberConstant :: Coarbitrary NumberConstant where
@@ -236,8 +273,6 @@ instance arbitraryNumberEquation :: Arbitrary NumberEquation where
                   ]
             in  oneOf x
           pure (Loop (Tuple chosenF (n - 1)))
--- instance coarbitraryEquation :: Coarbitrary a => Coarbitrary (Equation a) where
---   coarbitrary x = coarbitrary (from x) -- genericCoarbitrary
 
 
 
