@@ -3,10 +3,10 @@
 
 module Math.Equation where
 
-import Prelude (class Eq, class Show, class Ord, pure, (<$>), (<*>), (+), (-), (*), (/), negate, recip, gcd, lcm, min, max, mod)
+import Prelude (class Eq, eq, (&&), class Show, class Ord, pure, (<$>), (<*>), (+), (-), (*), (/), negate, recip, gcd, lcm, min, max, mod)
 import Data.Ord (abs)
 import Data.Maybe (Maybe (..))
-import Data.Tuple (Tuple)
+import Data.Tuple (Tuple (..))
 import Data.Either (Either (Left))
 import Data.Foldable (class Foldable)
 import Data.EuclideanRing (class EuclideanRing)
@@ -36,6 +36,8 @@ data NumberConstant
 derive instance genericNumberConstant :: Generic NumberConstant _
 instance eqNumberConstant :: Eq NumberConstant where
   eq = genericEq
+instance showNumberConstant :: Show NumberConstant where
+  show = genericShow
 
 
 data NumberEquation
@@ -61,6 +63,27 @@ data NumberEquation
 derive instance genericNumberEquation :: Generic NumberEquation _
 -- instance eqNumberEquation :: Eq NumberEquation where
 --   eq = genericEq
+instance eqNumberEquation :: Eq NumberEquation where
+  eq a b = case Tuple a b of
+    Tuple (ACos x) (ACos y) -> eq x y
+    Tuple (ASin x) (ASin y) -> eq x y
+    Tuple (ATan x) (ATan y) -> eq x y
+    Tuple (ATan2 x x') (ATan2 y y') -> eq x y && eq x' y'
+    Tuple (Cos x) (Cos y) -> eq x y
+    Tuple (Sin x) (Sin y) -> eq x y
+    Tuple (Tan x) (Tan y) -> eq x y
+    Tuple (Ceil x) (Ceil y) -> eq x y
+    Tuple (Floor x) (Floor y) -> eq x y
+    Tuple (Round x) (Round y) -> eq x y
+    Tuple (Trunc x) (Trunc y) -> eq x y
+    Tuple (Exp x) (Exp y) -> eq x y
+    Tuple (Log x) (Log y) -> eq x y
+    Tuple (Pow x x') (Pow y y') -> eq x y && eq x' y'
+    Tuple (Sqrt x) (Sqrt y) -> eq x y
+    Tuple (Remainder x x') (Remainder y y') -> eq x y && eq x' y'
+    Tuple (Equation x) (Equation y) -> eq x y
+    Tuple (Constant x) (Constant y) -> eq x y
+    _ -> false
 
 
 
