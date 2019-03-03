@@ -10,9 +10,14 @@
     "purescript-prelude": "^4.1.0",
     "purescript-math": "^2.1.1",
     "purescript-foreign-object": "^2.0.0",
-    "purescript-generics-rep": "^6.1.1"
+    "purescript-generics-rep": "^6.1.1",
+    "purescript-argonaut": "^5.0.0"
   },
   "devDependencies": {
     "purescript-psci-support": "^4.0.0"
+  },
+  "resolutions": {
+    "purescript-foreign-object": "^2.0.0",
+    "purescript-typelevel-prelude": "^4.0.0"
   }
 }

@@ -1,22 +1,34 @@
 -- | This module defines data structures that mirror common Math functions, to
 -- | ease the storage of such an equation.
 
-module Math.Equation where
+module Math.Equation
+  ( VarName, BoundVars, emptyVars, bindVars, bindVar, BoundError (..)
+  , NumberConstant (..), NumberEquation (..), Equation (..)
+  , computeConstant, computeNumber, compute
+  ) where
 
-import Prelude (class Eq, eq, (&&), class Show, class Ord, pure, (<$>), (<*>), (+), (-), (*), (/), negate, recip, gcd, lcm, min, max, mod)
+import Prelude
+  ( class Eq, eq, (&&), class Show, show, class Ord, class Functor, map
+  , (<$>), (<*>), (+), (-), (*), (/)
+  , negate, recip, gcd, lcm, min, max, mod, (<>), bind, unit, otherwise)
 import Data.Ord (abs)
 import Data.Maybe (Maybe (..))
 import Data.Tuple (Tuple (..))
-import Data.Either (Either (Left))
+import Data.Either (Either (..))
 import Data.Foldable (class Foldable)
 import Data.EuclideanRing (class EuclideanRing)
 import Data.DivisionRing (class DivisionRing)
 import Data.Generic.Rep (class Generic)
 import Data.Generic.Rep.Eq (genericEq)
 import Data.Generic.Rep.Show (genericShow)
+import Data.Argonaut
+  (class EncodeJson, class DecodeJson, encodeJson, decodeJson, (~>), (:=), jsonEmptyObject, (.:))
+import Control.Alternative ((<|>))
 import Foreign.Object (Object)
 import Foreign.Object (fromFoldable, insert, lookup) as O
-import Math (acos, asin, atan, atan2, cos, sin, tan, ceil, floor, round, trunc, exp, log, pow, sqrt, remainder, e, pi, tau, ln2, ln10, log2e, log10e, sqrt1_2, sqrt2)
+import Math
+  ( acos, asin, atan, atan2, cos, sin, tan, ceil, floor, round, trunc, exp
+  , log, pow, sqrt, remainder, e, pi, tau, ln2, ln10, log2e, log10e, sqrt1_2, sqrt2)
 
 
 type VarName = String
@@ -38,6 +50,33 @@ instance eqNumberConstant :: Eq NumberConstant where
   eq = genericEq
 instance showNumberConstant :: Show NumberConstant where
   show = genericShow
+instance encodeJsonNumberConstant :: EncodeJson NumberConstant where
+  encodeJson x =
+    let s = case x of
+          E -> "e"
+          Ln2 -> "ln2"
+          Ln10 -> "ln10"
+          Log2E -> "log2e"
+          Log10E -> "log10e"
+          Pi -> "pi"
+          Tau -> "tau"
+          Sqrt1_2 -> "sqrt1_2"
+          Sqrt2 -> "sqrt2"
+    in  encodeJson s
+instance decodeJsonNumberConstant :: DecodeJson NumberConstant where
+  decodeJson json = do
+    s <- decodeJson json
+    case unit of
+      _ | eq s "e" -> Right E
+        | eq s "ln2" -> Right Ln2
+        | eq s "ln10" -> Right Ln10
+        | eq s "log2e" -> Right Log2E
+        | eq s "log10e" -> Right Log10E
+        | eq s "pi" -> Right Pi
+        | eq s "tau" -> Right Tau
+        | eq s "sqrt1_2" -> Right Sqrt1_2
+        | eq s "sqrt2" -> Right Sqrt2
+        | otherwise -> Left "Not a NumberConstant"
 
 
 data NumberEquation
@@ -83,7 +122,85 @@ instance eqNumberEquation :: Eq NumberEquation where
     Tuple (Constant x) (Constant y) -> eq x y
     _ -> false
 instance showNumberEquation :: Show NumberEquation where
-  show = genericShow
+  show a = case a of
+    ACos x -> "ACos (" <> show x <> ")"
+    ASin x -> "ASin (" <> show x <> ")"
+    ATan x -> "ATan (" <> show x <> ")"
+    ATan2 x y -> "ATan2 (" <> show x <> ") (" <> show y <> ")"
+    Cos x -> "Cos (" <> show x <> ")"
+    Sin x -> "Sin (" <> show x <> ")"
+    Tan x -> "Tan (" <> show x <> ")"
+    Ceil x -> "Ceil (" <> show x <> ")"
+    Floor x -> "Floor (" <> show x <> ")"
+    Round x -> "Round (" <> show x <> ")"
+    Trunc x -> "Trunc (" <> show x <> ")"
+    Exp x -> "Exp (" <> show x <> ")"
+    Log x -> "Log (" <> show x <> ")"
+    Pow x y -> "Pow (" <> show x <> ") (" <> show y <> ")"
+    Sqrt x -> "Sqrt (" <> show x <> ")"
+    Remainder x y -> "Remainder (" <> show x <> ") (" <> show y <> ")"
+    Equation x -> "Equation (" <> show x <> ")"
+    Constant x -> "Constant (" <> show x <> ")"
+instance encodeJsonNumberEquation :: EncodeJson NumberEquation where
+  encodeJson a = case a of
+    ACos x -> "acos" := x ~> jsonEmptyObject
+    ASin x -> "asin" := x ~> jsonEmptyObject
+    ATan x -> "atan" := x ~> jsonEmptyObject
+    ATan2 x y -> "atan2" := (Tuple x y) ~> jsonEmptyObject
+    Cos x -> "cos" := x ~> jsonEmptyObject
+    Sin x -> "sin" := x ~> jsonEmptyObject
+    Tan x -> "tan" := x ~> jsonEmptyObject
+    Ceil x -> "ceil" := x ~> jsonEmptyObject
+    Floor x -> "floor" := x ~> jsonEmptyObject
+    Round x -> "round" := x ~> jsonEmptyObject
+    Trunc x -> "trunc" := x ~> jsonEmptyObject
+    Exp x -> "exp" := x ~> jsonEmptyObject
+    Log x -> "log" := x ~> jsonEmptyObject
+    Pow x y -> "pow" := (Tuple x y) ~> jsonEmptyObject
+    Sqrt x -> "sqrt" := x ~> jsonEmptyObject
+    Remainder x y -> "rem" := (Tuple x y) ~> jsonEmptyObject
+    Equation x -> "equ" := x ~> jsonEmptyObject
+    Constant x -> "con" := x ~> jsonEmptyObject
+instance decodeJsonNumberEquation :: DecodeJson NumberEquation where
+  decodeJson json = do
+    o <- decodeJson json
+    let acos' = ACos <$> o .: "acos"
+        asin' = ASin <$> o .: "asin"
+        atan' = ATan <$> o .: "atan"
+        atan2' = (\(Tuple x y) -> ATan2 x y) <$> o .: "atan2"
+        cos' = Cos <$> o .: "cos"
+        sin' = Sin <$> o .: "sin"
+        tan' = Tan <$> o .: "tan"
+        ceil' = Ceil <$> o .: "ceil"
+        floor' = Floor <$> o .: "floor"
+        round' = Round <$> o .: "round"
+        trunc' = Trunc <$> o .: "trunc"
+        exp' = Exp <$> o .: "exp"
+        log' = Log <$> o .: "log"
+        pow' = (\(Tuple x y) -> Pow x y) <$> o .: "pow"
+        sqrt' = Sqrt <$> o .: "sqrt"
+        remainder' = (\(Tuple x y) -> Remainder x y) <$> o .: "rem"
+        equation' = Equation <$> o .: "equ"
+        constant' = Constant <$> o .: "con"
+    acos'
+      <|> asin'
+      <|> atan'
+      <|> atan2'
+      <|> cos'
+      <|> sin'
+      <|> tan'
+      <|> ceil'
+      <|> floor'
+      <|> round'
+      <|> trunc'
+      <|> exp'
+      <|> log'
+      <|> pow'
+      <|> sqrt'
+      <|> remainder'
+      <|> equation'
+      <|> constant'
+
 
 
 
@@ -108,6 +225,69 @@ instance eqEquation :: Eq a => Eq (Equation a) where
   eq = genericEq
 instance showEquation :: Show a => Show (Equation a) where
   show = genericShow
+instance functorEquation :: Functor Equation where
+  map f a = case a of
+    Lit x -> Lit (f x)
+    Var n -> Var n
+    Add x y -> Add (map f x) (map f y)
+    Sub x y -> Sub (map f x) (map f y)
+    Negate x -> Negate (map f x)
+    Mul x y -> Mul (map f x) (map f y)
+    Div x y -> Div (map f x) (map f y)
+    Recip x -> Recip (map f x)
+    GCD x y -> GCD (map f x) (map f y)
+    LCM x y -> LCM (map f x) (map f y)
+    Abs x -> Abs (map f x)
+    Max x y -> Max (map f x) (map f y)
+    Min x y -> Min (map f x) (map f y)
+    Modulo x y -> Modulo (map f x) (map f y)
+instance encodeJsonEquation :: EncodeJson a => EncodeJson (Equation a) where
+  encodeJson a = case a of
+    Lit x -> "lit" := x ~> jsonEmptyObject
+    Var n -> "var" := n ~> jsonEmptyObject
+    Add x y -> "add" := (Tuple x y) ~> jsonEmptyObject
+    Sub x y -> "sub" := (Tuple x y) ~> jsonEmptyObject
+    Negate x -> "neg" := x ~> jsonEmptyObject
+    Mul x y -> "mul" := (Tuple x y) ~> jsonEmptyObject
+    Div x y -> "div" := (Tuple x y) ~> jsonEmptyObject
+    Recip x -> "rec" := x ~> jsonEmptyObject
+    GCD x y -> "gcd" := (Tuple x y) ~> jsonEmptyObject
+    LCM x y -> "lcm" := (Tuple x y) ~> jsonEmptyObject
+    Abs x -> "abs" := x ~> jsonEmptyObject
+    Max x y -> "max" := (Tuple x y) ~> jsonEmptyObject
+    Min x y -> "min" := (Tuple x y) ~> jsonEmptyObject
+    Modulo x y -> "mod" := (Tuple x y) ~> jsonEmptyObject
+instance decodeJsonEquation :: DecodeJson a => DecodeJson (Equation a) where
+  decodeJson json = do
+    o <- decodeJson json
+    let lit = Lit <$> o .: "lit"
+        var = Var <$> o .: "var"
+        add = (\(Tuple x y) -> Add x y) <$> o .: "add"
+        sub = (\(Tuple x y) -> Sub x y) <$> o .: "sub"
+        neg = Negate <$> o .: "neg"
+        mul = (\(Tuple x y) -> Mul x y) <$> o .: "mul"
+        div' = (\(Tuple x y) -> Div x y) <$> o .: "div"
+        recip' = Recip <$> o .: "rec"
+        gcd' = (\(Tuple x y) -> GCD x y) <$> o .: "gcd"
+        lcm' = (\(Tuple x y) -> LCM x y) <$> o .: "lcm"
+        abs' = Abs <$> o .: "abs"
+        max' = (\(Tuple x y) -> Max x y) <$> o .: "max"
+        min' = (\(Tuple x y) -> Min x y) <$> o .: "min"
+        mod' = (\(Tuple x y) -> Modulo x y) <$> o .: "mod"
+    lit
+      <|> var
+      <|> add
+      <|> sub
+      <|> neg
+      <|> mul
+      <|> div'
+      <|> recip'
+      <|> gcd'
+      <|> lcm'
+      <|> abs'
+      <|> max'
+      <|> min'
+      <|> mod'
 
 
 newtype BoundVars a = BoundVars (Object a)
@@ -124,6 +304,10 @@ bindVar (BoundVars xs) n v = BoundVars (O.insert n v xs)
 
 data BoundError
   = UnboundVariable VarName
+instance showBoundError :: Show BoundError where
+  show x = case x of
+    UnboundVariable n -> "UnboundVariable" <> show n
+
 
 
 computeConstant :: NumberConstant -> Number
@@ -158,7 +342,7 @@ computeNumber eq nss@(BoundVars ns) = case eq of
   Sqrt x -> sqrt <$> computeNumber x nss
   Remainder x y -> remainder <$> computeNumber x nss <*> computeNumber y nss
   Equation eq' -> compute eq' nss
-  Constant x -> pure (computeConstant x)
+  Constant x -> Right (computeConstant x)
 
 
 compute :: forall a
@@ -168,10 +352,10 @@ compute :: forall a
         => Ord a
         => Equation a -> BoundVars a -> Either BoundError a
 compute eq nss@(BoundVars ns) = case eq of
-  Lit v -> pure v
+  Lit v -> Right v
   Var n -> case O.lookup n ns of
     Nothing -> Left (UnboundVariable n)
-    Just v -> pure v
+    Just v -> Right v
   Add x y -> (+) <$> compute x nss <*> compute y nss
   Sub x y -> (-) <$> compute x nss <*> compute y nss
   Negate x -> negate <$> compute x nss
