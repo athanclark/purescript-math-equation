@@ -8,27 +8,31 @@ module Math.Equation
   ) where
 
 import Prelude
-  ( class Eq, eq, (&&), class Show, show, class Ord, class Functor, map
-  , (<$>), (<*>), (+), (-), (*), (/)
-  , negate, recip, gcd, lcm, min, max, mod, (<>), bind, unit, otherwise)
+  ( class Eq, class Show, class Ord, class Functor
+  , (<$>), (<*>), (+), (-), (*), (/), (<=), (<>), (&&)
+  , negate, recip, gcd, lcm, min, max, mod, pure, map, show, bind, unit, otherwise, eq, identity)
 import Data.Ord (abs)
 import Data.Maybe (Maybe (..))
 import Data.Tuple (Tuple (..))
 import Data.Either (Either (..))
+import Data.NonEmpty (NonEmpty (..))
 import Data.Foldable (class Foldable)
 import Data.EuclideanRing (class EuclideanRing)
 import Data.DivisionRing (class DivisionRing)
-import Data.Generic.Rep (class Generic)
+import Data.Generic.Rep (class Generic, from)
 import Data.Generic.Rep.Eq (genericEq)
 import Data.Generic.Rep.Show (genericShow)
 import Data.Argonaut
   (class EncodeJson, class DecodeJson, encodeJson, decodeJson, (~>), (:=), jsonEmptyObject, (.:))
 import Control.Alternative ((<|>))
+import Control.Monad.Rec.Class (tailRecM, Step (..))
 import Foreign.Object (Object)
 import Foreign.Object (fromFoldable, insert, lookup) as O
 import Math
   ( acos, asin, atan, atan2, cos, sin, tan, ceil, floor, round, trunc, exp
   , log, pow, sqrt, remainder, e, pi, tau, ln2, ln10, log2e, log10e, sqrt1_2, sqrt2)
+import Test.QuickCheck.Arbitrary (class Arbitrary, class Coarbitrary, genericArbitrary, arbitrary, coarbitrary)
+import Test.QuickCheck.Gen (Gen, oneOf, sized)
 
 
 type VarName = String
@@ -77,6 +81,10 @@ instance decodeJsonNumberConstant :: DecodeJson NumberConstant where
         | eq s "sqrt1_2" -> Right Sqrt1_2
         | eq s "sqrt2" -> Right Sqrt2
         | otherwise -> Left "Not a NumberConstant"
+instance arbitraryNumberConstant :: Arbitrary NumberConstant where
+  arbitrary = genericArbitrary
+instance coarbitraryNumberConstant :: Coarbitrary NumberConstant where
+  coarbitrary x = coarbitrary (from x) -- genericCoarbitrary
 
 
 data NumberEquation
@@ -200,6 +208,36 @@ instance decodeJsonNumberEquation :: DecodeJson NumberEquation where
       <|> remainder'
       <|> equation'
       <|> constant'
+instance arbitraryNumberEquation :: Arbitrary NumberEquation where
+  arbitrary = sized \s -> tailRecM go (Tuple identity s)
+    where
+      go :: Tuple (NumberEquation -> NumberEquation) Int
+         -> Gen (Step (Tuple (NumberEquation -> NumberEquation) Int) NumberEquation)
+      go (Tuple wrap n)
+        | n <= 1 = (\c -> Done (wrap (Constant c))) <$> arbitrary
+        | otherwise = do
+          chosenF <-
+            let x = NonEmpty (pure ASin)
+                  [ pure ATan
+                  , ATan2 <$> (Constant <$> arbitrary)
+                  , pure Cos
+                  , pure Sin
+                  , pure Tan
+                  , pure Ceil
+                  , pure Floor
+                  , pure Round
+                  , pure Trunc
+                  , pure Exp
+                  , pure Log
+                  , Pow <$> (Constant <$> arbitrary)
+                  , pure Sqrt
+                  , Remainder <$> (Constant <$> arbitrary)
+                  -- , pure Equation
+                  ]
+            in  oneOf x
+          pure (Loop (Tuple chosenF (n - 1)))
+-- instance coarbitraryEquation :: Coarbitrary a => Coarbitrary (Equation a) where
+--   coarbitrary x = coarbitrary (from x) -- genericCoarbitrary
 
 
 
@@ -222,9 +260,38 @@ data Equation a
 
 derive instance genericEquation :: Generic (Equation a) _
 instance eqEquation :: Eq a => Eq (Equation a) where
-  eq = genericEq
+  eq a b = case Tuple a b of
+    Tuple (Lit x) (Lit y) -> eq x y
+    Tuple (Var x) (Var y) -> eq x y
+    Tuple (Add x x') (Add y y') -> eq x y && eq x' y'
+    Tuple (Sub x x') (Sub y y') -> eq x y && eq x' y'
+    Tuple (Negate x) (Negate y) -> eq x y
+    Tuple (Mul x x') (Mul y y') -> eq x y && eq x' y'
+    Tuple (Div x x') (Div y y') -> eq x y && eq x' y'
+    Tuple (Recip x) (Recip y) -> eq x y
+    Tuple (GCD x x') (GCD y y') -> eq x y && eq x' y'
+    Tuple (LCM x x') (LCM y y') -> eq x y && eq x' y'
+    Tuple (Abs x) (Abs y) -> eq x y
+    Tuple (Max x x') (Max y y') -> eq x y && eq x' y'
+    Tuple (Min x x') (Min y y') -> eq x y && eq x' y'
+    Tuple (Modulo x x') (Modulo y y') -> eq x y && eq x' y'
+    _ -> false
 instance showEquation :: Show a => Show (Equation a) where
-  show = genericShow
+  show a = case a of
+    Lit x -> "Lit (" <> show x <> ")"
+    Var x -> "Var (" <> show x <> ")"
+    Add x y -> "Add (" <> show x <> ") (" <> show y <> ")"
+    Sub x y -> "Sub (" <> show x <> ") (" <> show y <> ")"
+    Negate x -> "Negate (" <> show x <> ")"
+    Mul x y -> "Mul (" <> show x <> ") (" <> show y <> ")"
+    Div x y -> "Div (" <> show x <> ") (" <> show y <> ")"
+    Recip x -> "Recip (" <> show x <> ")"
+    GCD x y -> "GCD (" <> show x <> ") (" <> show y <> ")"
+    LCM x y -> "LCM (" <> show x <> ") (" <> show y <> ")"
+    Abs x -> "Abs (" <> show x <> ")"
+    Max x y -> "Max (" <> show x <> ") (" <> show y <> ")"
+    Min x y -> "Min (" <> show x <> ") (" <> show y <> ")"
+    Modulo x y -> "Modulo (" <> show x <> ") (" <> show y <> ")"
 instance functorEquation :: Functor Equation where
   map f a = case a of
     Lit x -> Lit (f x)
@@ -288,6 +355,34 @@ instance decodeJsonEquation :: DecodeJson a => DecodeJson (Equation a) where
       <|> max'
       <|> min'
       <|> mod'
+instance arbitraryEquation :: Arbitrary a => Arbitrary (Equation a) where
+  arbitrary = sized \s -> tailRecM go (Tuple identity s)
+    where
+      small :: Gen (Equation a)
+      small =
+        let q = NonEmpty (Lit <$> arbitrary) [Var <$> arbitrary]
+        in  oneOf q
+      go :: Tuple (Equation a -> Equation a) Int
+         -> Gen (Step (Tuple (Equation a -> Equation a) Int) (Equation a))
+      go (Tuple wrap n)
+        | n <= 1 = (\c -> Done (wrap c)) <$> small
+        | otherwise = do
+          chosenF <-
+            let x = NonEmpty (Add <$> small)
+                  [ Sub <$> small
+                  , pure Negate
+                  , Mul <$> small
+                  , Div <$> small
+                  , pure Recip
+                  , GCD <$> small
+                  , LCM <$> small
+                  , pure Abs
+                  , Max <$> small
+                  , Min <$> small
+                  , Modulo <$> small
+                  ]
+            in  oneOf x
+          pure (Loop (Tuple chosenF (n - 1)))
 
 
 newtype BoundVars a = BoundVars (Object a)
