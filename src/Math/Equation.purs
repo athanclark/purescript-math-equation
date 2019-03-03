@@ -3,7 +3,7 @@
 
 module Math.Equation where
 
-import Prelude (class Eq, class Ord, pure, (<$>), (<*>), (+), (-), (*), (/), negate, recip, gcd, lcm, min, max, mod)
+import Prelude (class Eq, class Show, class Ord, pure, (<$>), (<*>), (+), (-), (*), (/), negate, recip, gcd, lcm, min, max, mod)
 import Data.Ord (abs)
 import Data.Maybe (Maybe (..))
 import Data.Tuple (Tuple)
@@ -11,12 +11,31 @@ import Data.Either (Either (Left))
 import Data.Foldable (class Foldable)
 import Data.EuclideanRing (class EuclideanRing)
 import Data.DivisionRing (class DivisionRing)
+import Data.Generic.Rep (class Generic)
+import Data.Generic.Rep.Eq (genericEq)
+import Data.Generic.Rep.Show (genericShow)
 import Foreign.Object (Object)
 import Foreign.Object (fromFoldable, insert, lookup) as O
 import Math (acos, asin, atan, atan2, cos, sin, tan, ceil, floor, round, trunc, exp, log, pow, sqrt, remainder, e, pi, tau, ln2, ln10, log2e, log10e, sqrt1_2, sqrt2)
 
 
 type VarName = String
+
+
+data NumberConstant
+  = E -- ^ `e`, Euler's constant
+  | Ln2 -- ^ `log_e(2)`
+  | Ln10 -- ^ `log_e(10)`
+  | Log2E -- ^ `log_2(e)`
+  | Log10E -- ^ `log_10(e)`
+  | Pi
+  | Tau
+  | Sqrt1_2 -- ^ Square-root of `0.5`
+  | Sqrt2 -- ^ Square-root of `2`
+
+derive instance genericNumberConstant :: Generic NumberConstant _
+instance eqNumberConstant :: Eq NumberConstant where
+  eq = genericEq
 
 
 data NumberEquation
@@ -36,16 +55,13 @@ data NumberEquation
   | Pow NumberEquation NumberEquation -- ^ `x^y`
   | Sqrt NumberEquation
   | Remainder NumberEquation NumberEquation
-  | E -- ^ `e`, Euler's constant
-  | Ln2 -- ^ `log_e(2)`
-  | Ln10 -- ^ `log_e(10)`
-  | Log2E -- ^ `log_2(e)`
-  | Log10E -- ^ `log_10(e)`
-  | Pi
-  | Tau
-  | Sqrt1_2 -- ^ Square-root of `0.5`
-  | Sqrt2 -- ^ Square-root of `2`
   | Equation (Equation Number)
+  | Constant NumberConstant
+
+derive instance genericNumberEquation :: Generic NumberEquation _
+-- instance eqNumberEquation :: Eq NumberEquation where
+--   eq = genericEq
+
 
 
 data Equation a
@@ -64,6 +80,12 @@ data Equation a
   | Min (Equation a) (Equation a)
   | Modulo (Equation a) (Equation a)
 
+derive instance genericEquation :: Generic (Equation a) _
+instance eqEquation :: Eq a => Eq (Equation a) where
+  eq = genericEq
+instance showEquation :: Show a => Show (Equation a) where
+  show = genericShow
+
 
 newtype BoundVars a = BoundVars (Object a)
 
@@ -79,6 +101,19 @@ bindVar (BoundVars xs) n v = BoundVars (O.insert n v xs)
 
 data BoundError
   = UnboundVariable VarName
+
+
+computeConstant :: NumberConstant -> Number
+computeConstant x = case x of
+  E -> e
+  Ln2 -> ln2
+  Ln10 -> ln10
+  Log2E -> log2e
+  Log10E -> log10e
+  Pi -> pi
+  Tau -> tau
+  Sqrt1_2 -> sqrt1_2
+  Sqrt2 -> sqrt2
 
 
 computeNumber :: NumberEquation -> BoundVars Number -> Either BoundError Number
@@ -99,16 +134,8 @@ computeNumber eq nss@(BoundVars ns) = case eq of
   Pow x y -> pow <$> computeNumber x nss <*> computeNumber y nss
   Sqrt x -> sqrt <$> computeNumber x nss
   Remainder x y -> remainder <$> computeNumber x nss <*> computeNumber y nss
-  E -> pure e
-  Ln2 -> pure ln2
-  Ln10 -> pure ln10
-  Log2E -> pure log2e
-  Log10E -> pure log10e
-  Pi -> pure pi
-  Tau -> pure tau
-  Sqrt1_2 -> pure sqrt1_2
-  Sqrt2 -> pure sqrt2
   Equation eq' -> compute eq' nss
+  Constant x -> pure (computeConstant x)
 
 
 compute :: forall a
