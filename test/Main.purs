@@ -10,9 +10,11 @@ import Effect.Console (log, warn)
 import Effect.Exception (try)
 import Effect.Unsafe (unsafePerformEffect)
 import Data.Argonaut (class EncodeJson, class DecodeJson, encodeJson, decodeJson)
+import Data.ArrayBuffer.Typed.Gen (genFloat64)
 import Data.ArrayBuffer.Class
-  (class EncodeArrayBuffer, class DecodeArrayBuffer, class DynamicByteLength, encodeArrayBuffer, decodeArrayBuffer)
-import Test.QuickCheck (Result (Failed), (===), quickCheck')
+  ( class EncodeArrayBuffer, class DecodeArrayBuffer, class DynamicByteLength
+  , encodeArrayBuffer, decodeArrayBuffer, Float64BE (..))
+import Test.QuickCheck (Result (Failed), (===), quickCheck', quickCheckGen')
 import Unsafe.Coerce (unsafeCoerce)
 
 
@@ -29,6 +31,8 @@ main = do
   log "ArrayBuffer encodings"
   log "  NumberConstant"
   quickCheck' 1000 (arrayBufferIso :: NumberConstant -> Result)
+  log "  Value"
+  quickCheckGen' 1000 (arrayBufferIso <$> genValue (Float64BE <$> genFloat64))
 
 
 
@@ -54,4 +58,4 @@ arrayBufferIso x = unsafePerformEffect do
     Left e -> do
       warn (unsafeCoerce x)
       pure (Failed (show e))
-    Right x -> pure x
+    Right y -> pure y

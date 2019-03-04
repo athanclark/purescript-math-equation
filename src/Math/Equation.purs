@@ -3,8 +3,9 @@
 
 module Math.Equation
   ( VarName, BoundVars, emptyVars, bindVars, bindVar, BoundError (..)
-  , NumberConstant (..), NumberValue (..), Value (..)
+  , NumberConstant (..), NumberValue (..), Value (..), Equation
   , computeConstant, computeNumberValue, computeValue
+  , genValue
   ) where
 
 import Prelude
@@ -24,13 +25,16 @@ import Data.Generic.Rep.Eq (genericEq)
 import Data.Generic.Rep.Show (genericShow)
 import Data.Argonaut
   (class EncodeJson, class DecodeJson, encodeJson, decodeJson, (~>), (:=), jsonEmptyObject, (.:))
+import Data.ArrayBuffer.Types (ByteLength)
 import Data.ArrayBuffer.Class
-  (class EncodeArrayBuffer, class DecodeArrayBuffer, class DynamicByteLength, putArrayBuffer, readArrayBuffer, Uint8 (..))
+  ( class EncodeArrayBuffer, class DecodeArrayBuffer, class DynamicByteLength
+  , putArrayBuffer, readArrayBuffer, byteLength, Uint8 (..))
 import Data.UInt (toInt, fromInt) as UInt
 import Control.Alternative ((<|>))
 import Control.Monad.Rec.Class (tailRecM, Step (..))
 import Foreign.Object (Object)
 import Foreign.Object (fromFoldable, insert, lookup) as O
+import Effect (Effect)
 import Effect.Exception (throw)
 import Math
   ( acos, asin, atan, atan2, cos, sin, tan, ceil, floor, round, trunc, exp
@@ -390,12 +394,109 @@ instance decodeJsonValue :: DecodeJson a => DecodeJson (Value a) where
       <|> max'
       <|> min'
       <|> mod'
+instance dynamicByteLengthValue :: DynamicByteLength a => DynamicByteLength (Value a) where
+  byteLength a = (_ + 1) <$> case a of
+    Lit x -> byteLength x
+    Var n -> byteLength n
+    Add x y -> (+) <$> byteLength x <*> byteLength y
+    Sub x y -> (+) <$> byteLength x <*> byteLength y
+    Negate x -> byteLength x
+    Mul x y -> (+) <$> byteLength x <*> byteLength y
+    Div x y -> (+) <$> byteLength x <*> byteLength y
+    Recip x -> byteLength x
+    GCD x y -> (+) <$> byteLength x <*> byteLength y
+    LCM x y -> (+) <$> byteLength x <*> byteLength y
+    Abs x -> byteLength x
+    Max x y -> (+) <$> byteLength x <*> byteLength y
+    Min x y -> (+) <$> byteLength x <*> byteLength y
+    Modulo x y -> (+) <$> byteLength x <*> byteLength y
+instance encodeArrayBufferValue :: EncodeArrayBuffer a => EncodeArrayBuffer (Value a) where
+  putArrayBuffer b o a = do
+    let put2 e x y = do
+          mW <- putArrayBuffer b o' x
+          case mW of
+            Nothing -> throw ("Couldn't write first argument to " <> e)
+            Just w -> do
+              mW' <- putArrayBuffer b (o' + w) y
+              case mW' of
+                Nothing -> throw ("Couldn't write second argument to " <> e)
+                Just w' -> pure (Just (w + w'))
+        o' = o + 1
+        Tuple val cont = case a of
+          Lit x -> Tuple 0 (putArrayBuffer b o' x)
+          Var n -> Tuple 1 (putArrayBuffer b o' n)
+          Add x y -> Tuple 2 (put2 "Add" x y)
+          Sub x y -> Tuple 3 (put2 "Sub" x y)
+          Negate n -> Tuple 4 (putArrayBuffer b o' n)
+          Mul x y -> Tuple 5 (put2 "Mul" x y)
+          Div x y -> Tuple 6 (put2 "Div" x y)
+          Recip n -> Tuple 7 (putArrayBuffer b o' n)
+          GCD x y -> Tuple 8 (put2 "GCD" x y)
+          LCM x y -> Tuple 9 (put2 "LCM" x y)
+          Abs n -> Tuple 10 (putArrayBuffer b o' n)
+          Max x y -> Tuple 11 (put2 "Max" x y)
+          Min x y -> Tuple 12 (put2 "Min" x y)
+          Modulo x y -> Tuple 13 (put2 "Modulo" x y)
+    mW <- putArrayBuffer b o (Uint8 (UInt.fromInt val))
+    case mW of
+      Nothing -> pure Nothing
+      Just _ -> (map (_ + 1)) <$> cont
+instance decodeArrayBufferValue :: (DecodeArrayBuffer a, DynamicByteLength a) => DecodeArrayBuffer (Value a) where
+  readArrayBuffer b o = do
+    mFlag <- readArrayBuffer b o
+    let o' = o + 1
+        overMaybe :: forall q w
+                   . DecodeArrayBuffer q
+                  => String -> ByteLength -> (q -> w) -> Effect (Maybe w)
+        overMaybe e l f = do
+          mX <- readArrayBuffer b (o' + l)
+          case mX of
+            Nothing -> throw ("Couldn't read argument to " <> e)
+            Just x -> pure (Just (f x))
+        overBoth :: forall q w e
+                  . DecodeArrayBuffer q
+                 => DecodeArrayBuffer w
+                 => DynamicByteLength q
+                 => String -> (q -> w -> e) -> Effect (Maybe e)
+        overBoth e f = do
+          mX <- readArrayBuffer b o'
+          case mX of
+            Nothing -> throw ("Couldn't read first argument to " <> e)
+            Just x -> do
+              l <- byteLength x
+              overMaybe ("second " <> e) l (f x)
+    case mFlag of
+      Nothing -> pure Nothing
+      Just (Uint8 f) -> case UInt.toInt f of
+        flag
+          | eq flag 0 -> overMaybe "Lit" 0 Lit
+          | eq flag 1 -> overMaybe "Var" 0 Var
+          | eq flag 2 -> overBoth "Add" Add
+          | eq flag 3 -> overBoth "Sub" Sub
+          | eq flag 4 -> overMaybe "Negate" 0 Negate
+          | eq flag 5 -> overBoth "Mul" Mul
+          | eq flag 6 -> overBoth "Div" Div
+          | eq flag 7 -> overMaybe "Recip" 0 Recip
+          | eq flag 8 -> overBoth "GCD" GCD
+          | eq flag 9 -> overBoth "LCM" LCM
+          | eq flag 10 -> overMaybe "Abs" 0 Abs
+          | eq flag 11 -> overBoth "Max" Max
+          | eq flag 12 -> overBoth "Min" Min
+          | eq flag 13 -> overBoth "Modulo" Modulo
+          | otherwise -> throw "Not a Value"
 instance arbitraryValue :: Arbitrary a => Arbitrary (Value a) where
-  arbitrary = sized \s -> tailRecM go (Tuple identity s)
+  arbitrary = genValue arbitrary
+
+type Equation a = Tuple a a
+
+
+
+genValue :: forall a. Gen a -> Gen (Value a)
+genValue gen = sized \s -> tailRecM go (Tuple identity s)
     where
       small :: Gen (Value a)
       small =
-        let q = NonEmpty (Lit <$> arbitrary) [Var <$> arbitrary]
+        let q = NonEmpty (Lit <$> gen) [Var <$> arbitrary]
         in  oneOf q
       go :: Tuple (Value a -> Value a) Int
          -> Gen (Step (Tuple (Value a -> Value a) Int) (Value a))
@@ -418,6 +519,8 @@ instance arbitraryValue :: Arbitrary a => Arbitrary (Value a) where
                   ]
             in  oneOf x
           pure (Loop (Tuple chosenF (n - 1)))
+
+
 
 
 newtype BoundVars a = BoundVars (Object a)
