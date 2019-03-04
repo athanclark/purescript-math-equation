@@ -33,6 +33,8 @@ main = do
   quickCheck' 1000 (arrayBufferIso :: NumberConstant -> Result)
   log "  Value"
   quickCheckGen' 1000 (arrayBufferIso <$> genValue (Float64BE <$> genFloat64))
+  log "  NumberValue"
+  quickCheck' 1000 (arrayBufferIso :: NumberValue -> Result)
 
 
 

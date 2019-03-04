@@ -28,7 +28,7 @@ import Data.Argonaut
 import Data.ArrayBuffer.Types (ByteLength)
 import Data.ArrayBuffer.Class
   ( class EncodeArrayBuffer, class DecodeArrayBuffer, class DynamicByteLength
-  , putArrayBuffer, readArrayBuffer, byteLength, Uint8 (..))
+  , putArrayBuffer, readArrayBuffer, byteLength, Uint8 (..), Float64BE (..))
 import Data.UInt (toInt, fromInt) as UInt
 import Control.Alternative ((<|>))
 import Control.Monad.Rec.Class (tailRecM, Step (..))
@@ -249,6 +249,108 @@ instance decodeJsonNumberValue :: DecodeJson NumberValue where
       <|> remainder'
       <|> value'
       <|> constant'
+instance encodeArrayBufferNumberValue :: EncodeArrayBuffer NumberValue where
+  putArrayBuffer b o a = do
+    let put2 e x y = do
+          mW <- putArrayBuffer b o' x
+          case mW of
+            Nothing -> throw ("Couldn't write first argument to " <> e)
+            Just w -> do
+              mW' <- putArrayBuffer b (o' + w) y
+              case mW' of
+                Nothing -> throw ("Couldn't write second argument to " <> e)
+                Just w' -> pure (Just (w + w'))
+        o' = o + 1
+        Tuple val cont = case a of
+          ACos x -> Tuple 0 (putArrayBuffer b o' x)
+          ASin x -> Tuple 1 (putArrayBuffer b o' x)
+          ATan x -> Tuple 2 (putArrayBuffer b o' x)
+          ATan2 x y -> Tuple 3 (put2 "ATan2" x y)
+          Cos x -> Tuple 4 (putArrayBuffer b o' x)
+          Sin x -> Tuple 5 (putArrayBuffer b o' x)
+          Tan x -> Tuple 6 (putArrayBuffer b o' x)
+          Ceil x -> Tuple 7 (putArrayBuffer b o' x)
+          Floor x -> Tuple 8 (putArrayBuffer b o' x)
+          Round x -> Tuple 9 (putArrayBuffer b o' x)
+          Trunc x -> Tuple 10 (putArrayBuffer b o' x)
+          Exp x -> Tuple 11 (putArrayBuffer b o' x)
+          Log x -> Tuple 12 (putArrayBuffer b o' x)
+          Pow x y -> Tuple 13 (put2 "Pow" x y)
+          Sqrt x -> Tuple 14 (putArrayBuffer b o' x)
+          Remainder x y -> Tuple 15 (put2 "Remainder" x y)
+          Value x -> Tuple 16 (putArrayBuffer b o' (map Float64BE x))
+          Constant x -> Tuple 17 (putArrayBuffer b o' x)
+    mW <- putArrayBuffer b o (Uint8 (UInt.fromInt val))
+    case mW of
+      Nothing -> pure Nothing
+      Just _ -> (map (_ + 1)) <$> cont
+instance dynamicByteLengthNumberValue :: DynamicByteLength NumberValue where
+  byteLength a = (_ + 1) <$> case a of
+    ACos x -> byteLength x
+    ASin x -> byteLength x
+    ATan x -> byteLength x
+    ATan2 x y -> (+) <$> byteLength x <*> byteLength y
+    Cos x -> byteLength x
+    Sin x -> byteLength x
+    Tan x -> byteLength x
+    Ceil x -> byteLength x
+    Floor x -> byteLength x
+    Round x -> byteLength x
+    Trunc x -> byteLength x
+    Exp x -> byteLength x
+    Log x -> byteLength x
+    Pow x y -> (+) <$> byteLength x <*> byteLength y
+    Sqrt x -> byteLength x
+    Remainder x y -> (+) <$> byteLength x <*> byteLength y
+    Value x -> byteLength (map Float64BE x)
+    Constant x -> byteLength x
+instance decodeArrayBufferNumberValue :: DecodeArrayBuffer NumberValue where
+  readArrayBuffer b o = do
+    mFlag <- readArrayBuffer b o
+    let o' = o + 1
+        overMaybe :: forall q w
+                   . DecodeArrayBuffer q
+                  => String -> ByteLength -> (q -> w) -> Effect (Maybe w)
+        overMaybe e l f = do
+          mX <- readArrayBuffer b (o' + l)
+          case mX of
+            Nothing -> throw ("Couldn't read argument to " <> e)
+            Just x -> pure (Just (f x))
+        overBoth :: forall q w e
+                  . DecodeArrayBuffer q
+                 => DecodeArrayBuffer w
+                 => DynamicByteLength q
+                 => String -> (q -> w -> e) -> Effect (Maybe e)
+        overBoth e f = do
+          mX <- readArrayBuffer b o'
+          case mX of
+            Nothing -> throw ("Couldn't read first argument to " <> e)
+            Just x -> do
+              l <- byteLength x
+              overMaybe ("second " <> e) l (f x)
+    case mFlag of
+      Nothing -> pure Nothing
+      Just (Uint8 f) -> case UInt.toInt f of
+        flag
+          | eq flag 0 -> overMaybe "ACos" 0 ACos
+          | eq flag 1 -> overMaybe "ASin" 0 ASin
+          | eq flag 2 -> overMaybe "ATan" 0 ATan
+          | eq flag 3 -> overBoth "ATan2" ATan2
+          | eq flag 4 -> overMaybe "Cos" 0 Cos
+          | eq flag 5 -> overMaybe "Sin" 0 Sin
+          | eq flag 6 -> overMaybe "Tan" 0 Tan
+          | eq flag 7 -> overMaybe "Ceil" 0 Ceil
+          | eq flag 8 -> overMaybe "Floor" 0 Floor
+          | eq flag 9 -> overMaybe "Round" 0 Round
+          | eq flag 10 -> overMaybe "Trunc" 0 Trunc
+          | eq flag 11 -> overMaybe "Exp" 0 Exp
+          | eq flag 12 -> overMaybe "Log" 0 Log
+          | eq flag 13 -> overBoth "Pow" Pow
+          | eq flag 14 -> overMaybe "Sqrt" 0 Sqrt
+          | eq flag 15 -> overBoth "Remainder" Remainder
+          | eq flag 16 -> overMaybe "Value" 0 (\x -> Value (map (\(Float64BE y) -> y) x))
+          | eq flag 17 -> overMaybe "Constant" 0 Constant
+          | otherwise -> throw "Not a Value"
 instance arbitraryNumberValue :: Arbitrary NumberValue where
   arbitrary = sized \s -> tailRecM go (Tuple identity s)
     where
@@ -273,7 +375,6 @@ instance arbitraryNumberValue :: Arbitrary NumberValue where
                   , Pow <$> (Constant <$> arbitrary)
                   , pure Sqrt
                   , Remainder <$> (Constant <$> arbitrary)
-                  -- , pure Value
                   ]
             in  oneOf x
           pure (Loop (Tuple chosenF (n - 1)))
