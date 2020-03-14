@@ -12,20 +12,15 @@
     "url": "git://github.com/athanclark/purescript-math-equation.git"
   },
   "dependencies": {
-    "purescript-prelude": "^4.1.0",
+    "purescript-prelude": "^4.1.1",
     "purescript-math": "^2.1.1",
-    "purescript-foreign-object": "^2.0.0",
+    "purescript-foreign-object": "^2.0.2",
     "purescript-generics-rep": "^6.1.1",
-    "purescript-argonaut": "^5.0.0",
-    "purescript-quickcheck": "^6.0.0",
-    "purescript-arraybuffer-class": "^0.0.0"
+    "purescript-argonaut": "^6.0.0",
+    "purescript-quickcheck": "^6.1.0",
+    "purescript-arraybuffer-class": "^0.2.4"
   },
   "devDependencies": {
     "purescript-psci-support": "^4.0.0"
-  },
-  "resolutions": {
-    "purescript-foreign-object": "^2.0.0",
-    "purescript-typelevel-prelude": "^4.0.0",
-    "purescript-record": "^2.0.0"
   }
 }
